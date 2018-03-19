@@ -91,13 +91,13 @@
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "DEVELOPER_DIR"
-            value = "${DEVELOPER_DIR}"
+            key = "TOOLCHAINS"
+            value = "${TOOLCHAINS}"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
-            key = "TOOLCHAINS"
-            value = "${TOOLCHAINS}"
+            key = "DEVELOPER_DIR"
+            value = "${DEVELOPER_DIR}"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

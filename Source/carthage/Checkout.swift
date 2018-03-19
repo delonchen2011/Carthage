@@ -23,7 +23,11 @@ public struct CheckoutCommand: CommandProtocol {
 			self.useSSH = useSSH
 			self.useSubmodules = useSubmodules
 			self.colorOptions = colorOptions
-			self.directoryPath = directoryPath
+			#if DEBUG
+				self.directoryPath = "/Users/mac/Desktop/Sample/CarthagePods/DemoView"
+			#else
+				self.directoryPath = directoryPath;
+			#endif
 			self.dependenciesToCheckout = dependenciesToCheckout
 		}
 

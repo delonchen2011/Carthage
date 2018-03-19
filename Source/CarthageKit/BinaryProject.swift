@@ -1,7 +1,6 @@
 import Foundation
 import Result
 
-/// Represents a binary dependency 
 public struct BinaryProject {
 	private static let jsonDecoder = JSONDecoder()
 

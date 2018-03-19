@@ -7,7 +7,7 @@ import Tentacle
 
 /// The latest online version as a SemanticVersion object.
 public func remoteVersion() -> SemanticVersion? {
-	let latestRemoteVersion = Client(.dotCom, urlSession: URLSession.proxiedSession)
+	let latestRemoteVersion = Client(.dotCom)
 		.execute(Repository(owner: "Carthage", name: "Carthage").releases, perPage: 2)
 		.map { _, releases in
 			return releases.first { !$0.isDraft }!

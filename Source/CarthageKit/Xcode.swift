@@ -102,7 +102,7 @@ public func xcodebuildTask(_ task: String, _ buildArguments: BuildArguments) -> 
 
 /// Finds schemes of projects or workspaces, which Carthage should build, found
 /// within the given directory.
-public func buildableSchemesInDirectory( // swiftlint:disable:this function_body_length
+public func buildableSchemesInDirectory(
 	_ directoryURL: URL,
 	withConfiguration configuration: String,
 	forPlatforms platforms: Set<Platform> = []
@@ -255,10 +255,30 @@ private func copyBuildProductIntoDirectory(_ directoryURL: URL, _ settings: Buil
 private func copyBCSymbolMapsForBuildProductIntoDirectory(_ directoryURL: URL, _ settings: BuildSettings) -> SignalProducer<URL, CarthageError> {
 	if settings.bitcodeEnabled.value == true {
 		return SignalProducer(result: settings.wrapperURL)
-			.flatMap(.merge) { wrapperURL in BCSymbolMapsForFramework(wrapperURL) }
+			.flatMap(.merge) {
+				wrapperURL in BCSymbolMapsForFramework(wrapperURL)
+			}
 			.copyFileURLsIntoDirectory(directoryURL)
 	} else {
 		return .empty
+	}
+}
+
+private func copyModuleOtherDirectory(_ directoryURL: URL, _ settings: BuildSettings) -> SignalProducer<URL, CarthageError> {
+	
+	return SignalProducer(result: settings.wrapperURL)
+		.flatMap(.merge) {
+			wrapperURL in moduleOtherDirectory(wrapperURL)
+		}
+		.copyDirectoryIntoDirectory(directoryURL)
+}
+
+public func moduleOtherDirectory(_ wrapperURL: URL) -> SignalProducer<URL, CarthageError> {
+	let directoryURL = wrapperURL.deletingLastPathComponent()
+	return SignalProducer {
+		() -> Result<URL, CarthageError> in
+		.success(directoryURL)
+		
 	}
 }
 
@@ -308,6 +328,7 @@ private func mergeModuleIntoModule(_ sourceModuleDirectoryURL: URL, _ destinatio
 
 /// Determines whether the specified framework type should be built automatically.
 private func shouldBuildFrameworkType(_ frameworkType: FrameworkType?) -> Bool {
+	return true;
 	return frameworkType == .dynamic
 }
 
@@ -395,7 +416,7 @@ private func mergeBuildProducts(
 		.flatMap(.merge) { productURL -> SignalProducer<URL, CarthageError> in
 			let executableURLs = (deviceBuildSettings.executableURL.fanout(simulatorBuildSettings.executableURL)).map { [ $0, $1 ] }
 			let outputURL = deviceBuildSettings.executablePath.map(destinationFolderURL.appendingPathComponent)
-
+			
 			let mergeProductBinaries = SignalProducer(result: executableURLs.fanout(outputURL))
 				.flatMap(.concat) { (executableURLs: [URL], outputURL: URL) -> SignalProducer<(), CarthageError> in
 					return mergeExecutables(
@@ -424,6 +445,7 @@ private func mergeBuildProducts(
 			return mergeProductBinaries
 				.then(mergeProductModules)
 				.then(copyBCSymbolMapsForBuildProductIntoDirectory(destinationFolderURL, simulatorBuildSettings))
+				.then(copyModuleOtherDirectory(destinationFolderURL, simulatorBuildSettings))
 				.then(SignalProducer<URL, CarthageError>(value: productURL))
 		}
 }
@@ -435,7 +457,7 @@ public typealias SDKFilterCallback = (_ sdks: [SDK], _ scheme: Scheme, _ configu
 ///
 /// Returns a signal of all standard output from `xcodebuild`, and a signal
 /// which will send the URL to each product successfully built.
-public func buildScheme( // swiftlint:disable:this function_body_length cyclomatic_complexity
+public func buildScheme( // swiftlint:disable:this function_body_length function_parameter_count cyclomatic_complexity
 	_ scheme: Scheme,
 	withOptions options: BuildOptions,
 	inProject project: ProjectLocator,
@@ -496,6 +518,7 @@ public func buildScheme( // swiftlint:disable:this function_body_length cyclomat
 		.flatMap(.concat) { platform, sdks -> SignalProducer<TaskEvent<URL>, CarthageError> in
 			let folderURL = rootDirectoryURL.appendingPathComponent(platform.relativePath, isDirectory: true).resolvingSymlinksInPath()
 
+			// TODO: Generalize this further?
 			switch sdks.count {
 			case 1:
 				return build(sdk: sdks[0], with: buildArgs, in: workingDirectoryURL)
@@ -581,7 +604,6 @@ public func buildScheme( // swiftlint:disable:this function_body_length cyclomat
 }
 
 /// Runs the build for a given sdk and build arguments, optionally performing a clean first
-// swiftlint:disable:next function_body_length
 private func build(sdk: SDK, with buildArgs: BuildArguments, in workingDirectoryURL: URL) -> SignalProducer<TaskEvent<BuildSettings>, CarthageError> {
 	var argsForLoading = buildArgs
 	argsForLoading.sdk = sdk
@@ -761,7 +783,7 @@ public func build(
 /// Builds the any shared framework schemes found within the given directory.
 ///
 /// Returns a signal of all standard output from `xcodebuild`, and each scheme being built.
-public func buildInDirectory( // swiftlint:disable:this function_body_length
+public func buildInDirectory(
 	_ directoryURL: URL,
 	withOptions options: BuildOptions,
 	dependency: (dependency: Dependency, version: PinnedVersion)? = nil,
@@ -787,14 +809,7 @@ public func buildInDirectory( // swiftlint:disable:this function_body_length
 					return sdkFilter(filteredSDKs, scheme, configuration, project)
 				}
 
-				return buildScheme(
-						scheme,
-						withOptions: options,
-						inProject: project,
-						rootDirectoryURL: rootDirectoryURL,
-						workingDirectoryURL: directoryURL,
-						sdkFilter: wrappedSDKFilter
-					)
+				return buildScheme(scheme, withOptions: options, inProject: project, rootDirectoryURL: rootDirectoryURL, workingDirectoryURL: directoryURL, sdkFilter: wrappedSDKFilter)
 					.mapError { error -> CarthageError in
 						if case let .taskError(taskError) = error {
 							return .buildFailed(taskError, log: nil)
@@ -918,6 +933,27 @@ public func copyProduct(_ from: URL, _ to: URL) -> SignalProducer<URL, CarthageE
 	}
 }
 
+public func copyDirectoryProduct(_ from: URL, _ to: URL) -> SignalProducer<URL, CarthageError> {
+	return SignalProducer<URL, CarthageError> { () -> Result<URL, CarthageError> in
+		let manager = FileManager.init()
+		if let contents = try?manager.contentsOfDirectory(atPath:from.path) {
+			for content in contents {
+				let filePath = from.appendingPathComponent(content)
+				var isDirectory: ObjCBool = false
+				if (manager.fileExists(atPath: filePath.path, isDirectory: &isDirectory)) {
+					if (isDirectory.boolValue && !content.hasSuffix(".framework") && !content.hasSuffix(".dSYM")) {
+						let destFilePath = to.appendingPathComponent(content)
+						try?manager.removeItem(at: destFilePath)
+						try?manager.copyItem(atPath: filePath.path, toPath: destFilePath.path)
+					}
+				}
+			}
+		}
+		
+		return .success(to);
+	}
+}
+
 extension SignalProducer where Value == URL, Error == CarthageError {
 	/// Copies existing files sent from the producer into the given directory.
 	///
@@ -932,6 +968,14 @@ extension SignalProducer where Value == URL, Error == CarthageError {
 
 				return copyProduct(fileURL, resolvedDestinationURL)
 			}
+	}
+	
+	public func copyDirectoryIntoDirectory(_ directoryURL: URL) -> SignalProducer<URL, CarthageError> {
+		return producer
+			.filter { fileURL in (try? fileURL.checkResourceIsReachable()) ?? false }
+			.flatMap(.merge) { fileURL -> SignalProducer<URL, CarthageError> in
+				return copyDirectoryProduct(fileURL, directoryURL)
+		}
 	}
 }
 
@@ -1048,7 +1092,7 @@ public func architecturesInPackage(_ packageURL: URL) -> SignalProducer<String, 
 public func stripDebugSymbols(_ frameworkURL: URL) -> SignalProducer<(), CarthageError> {
 	return SignalProducer<URL, CarthageError> { () -> Result<URL, CarthageError> in binaryURL(frameworkURL) }
 		.flatMap(.merge) { binaryURL -> SignalProducer<TaskEvent<Data>, CarthageError> in
-			let stripTask = Task("/usr/bin/xcrun", arguments: [ "strip", "-S", "-o", binaryURL.path, binaryURL.path])
+			let stripTask = Task("/usr/bin/xcrun", arguments: [ "strip", "-S","-o", binaryURL.path, binaryURL.path])
 			return stripTask.launch()
 				.mapError(CarthageError.taskError)
 		}
